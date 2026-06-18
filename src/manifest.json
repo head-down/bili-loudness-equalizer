@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Bilibili 视频音量均衡器",
+  "version": "2.0.0",
+  "description": "基于 LUFS 标准，实时测量 B站视频音频响度，自动标准化音量差异。",
+  "permissions": ["storage"],
+  "host_permissions": ["*://*.bilibili.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.bilibili.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["*://*.bilibili.com/*"]
+    }
+  ]
+}
