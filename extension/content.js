@@ -23,7 +23,7 @@
     const PRESET_LABELS = { balanced: '均衡模式', voice: '人声增强', music: '音乐模式', gaming: '游戏模式', custom: '自定义' };
 
     let currentSettings = { ...DEFAULT_SETTINGS };
-    let lastRMS = 0;
+    let lastLufs = -100;
     let panelElement = null;
 
     // 2. 存储 API 替换
@@ -45,7 +45,8 @@
     window.addEventListener('message', (event) => {
         if (!event.data) return;
         if (event.data.type === 'BILI_EQ_METER') {
-            lastRMS = event.data.rms;
+            console.log('[LoudnessEQ CONTENT] 收到 LUFS:', event.data.lufs, 'gainDB:', event.data.gainDB);
+            lastLufs = event.data.lufs;
             updateMeterDisplay();
         }
     });
@@ -137,8 +138,8 @@
         if (!panelElement || panelElement.style.display === 'none') return;
         const el = document.getElementById('bili-eq-lufs');
         if (el) {
-            const db = lastRMS > 1e-10 ? 20 * Math.log10(lastRMS) : null;
-            el.textContent = db !== null && isFinite(db) ? db.toFixed(1) + ' dB' : '-- dB';
+            const value = lastLufs !== undefined && lastLufs > -70 ? lastLufs.toFixed(1) + ' LUFS' : '-- LUFS';
+            el.textContent = value;
         }
     }
 
