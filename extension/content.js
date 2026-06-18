@@ -2,11 +2,26 @@
 (function() {
     'use strict';
 
-    // 1. 注入底层音频脚本
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('inject.js');
-    script.onload = function() { this.remove(); };
-    (document.head || document.documentElement).appendChild(script);
+    // 1. 注入底层脚本：messages.js 先，inject.js 后
+    function injectScript(url, onload) {
+        const script = document.createElement('script');
+        script.src = chrome.runtime.getURL(url);
+        script.onload = function() { this.remove(); if (onload) onload(); };
+        (document.head || document.documentElement).appendChild(script);
+    }
+    injectScript('messages.js', () => {
+        injectScript('inject.js');
+    });
+
+    // 消息类型常量（与 messages.js 保持一致，ISOLATED world 无法访问 MAIN world 全局）
+    const MSG = { SETTINGS: 'BILI_EQ_SETTINGS', METER: 'BILI_EQ_METER' };
+
+    // Meter 消息校验（与 messages.js validateMeter 一致）
+    function validateMeter(data) {
+        if (!data || typeof data !== 'object') return null;
+        if (typeof data.lufs !== 'number' || typeof data.gainDB !== 'number') return null;
+        return { lufs: data.lufs, gainDB: data.gainDB };
+    }
 
     const DEFAULT_SETTINGS = {
         enabled: true, targetLufs: -18, preset: 'balanced', gainRange: [-12, 12]
@@ -36,15 +51,16 @@
     function saveSettings(settings) {
         currentSettings = settings;
         chrome.storage.local.set({ bili_eq_settings: settings });
-        window.postMessage({ type: 'BILI_EQ_SETTINGS', settings }, '*');
+        window.postMessage({ type: MSG.SETTINGS, settings }, '*');
     }
 
     // 3. 接收底层音频数据
     window.addEventListener('message', (event) => {
         if (!event.data) return;
-        if (event.data.type === 'BILI_EQ_METER') {
-            console.log('[LoudnessEQ CONTENT] 收到 LUFS:', event.data.lufs, 'gainDB:', event.data.gainDB);
-            lastLufs = event.data.lufs;
+        if (event.data.type === MSG.METER) {
+            const m = validateMeter(event.data);
+            if (!m) return;
+            lastLufs = m.lufs;
             updateMeterDisplay();
         }
     });
@@ -144,7 +160,7 @@
     // 5. 初始化与轮询
     async function init() {
         currentSettings = await loadSettings();
-        window.postMessage({ type: 'BILI_EQ_SETTINGS', settings: currentSettings }, '*');
+        window.postMessage({ type: MSG.SETTINGS, settings: currentSettings }, '*');
         injectStyles();
 
         let polls = 0;

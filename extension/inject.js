@@ -9,11 +9,11 @@
         return null;
     })();
 
-    let settings = {
-        enabled: true,
-        targetLufs: -18,
-        gainRange: [-12, 12]
-    };
+    // 消息契约（由 messages.js 注入到 MAIN world）
+    const EQ = window.__LOUDNESS_EQ__;
+    if (!EQ) console.error('[LoudnessEQ] messages.js 未加载，消息契约不可用');
+
+    let settings = { ...(EQ ? EQ.DEFAULTS : { enabled: true, targetLufs: -18, gainRange: [-12, 12] }) };
 
     let activeNodes = null;
 
@@ -104,7 +104,7 @@
                 gainDB = Math.max(settings.gainRange[0], Math.min(settings.gainRange[1], gainDB));
                 const gainLinear = Math.pow(10, gainDB / 20);
                 gain.gain.linearRampToValueAtTime(gainLinear, ctx.currentTime + 0.2);
-                window.postMessage({ type: 'BILI_EQ_METER', lufs: momentaryLufs, gainDB }, '*');
+                window.postMessage(EQ.createMeterMessage(momentaryLufs, gainDB), '*');
             }
         };
 
@@ -120,7 +120,8 @@
 
             const full = createFullChain(ctx, destination);
             source.connect(full.workletNode);
-            activeNodes = { ctx, ...full };
+            activeNodes = { ctx, ...full, source, destination };
+            setupLifecycle(ctx, full.workletNode);
         } catch (e) {
             console.error('[LoudnessEQ] 升级失败，回退到旁路:', e.message);
             // 重建旁路连接
@@ -128,12 +129,89 @@
         }
     }
 
+    // ---- 错误恢复与生命周期 ----
+
+    let rebuildTimer = null;
+
+    function teardownChain() {
+        const n = activeNodes;
+        if (!n) return;
+        try { n.source?.disconnect(); } catch(e) {}
+        try { n.workletNode?.disconnect(); } catch(e) {}
+        try { n.gain?.disconnect(); } catch(e) {}
+        try { n.limiter?.disconnect(); } catch(e) {}
+    }
+
+    function rebuildChain() {
+        const n = activeNodes;
+        if (!n || !n.source || !n.destination) return;
+        const ctx = n.ctx, source = n.source, dest = n.destination;
+
+        teardownChain();
+
+        try {
+            const state = workletLoadState.get(ctx);
+            if (state && state.status === 'loaded') {
+                const full = createFullChain(ctx, dest);
+                source.connect(full.workletNode);
+                activeNodes = { ctx, ...full, source, destination: dest };
+                setupLifecycle(ctx, full.workletNode);
+            } else {
+                const fb = createFallbackChain(ctx, dest);
+                source.connect(fb.gain);
+                activeNodes = { ctx, ...fb, source, destination: dest };
+            }
+        } catch (e) {
+            console.error('[LoudnessEQ] 链路重建失败:', e);
+            try { source.connect(dest); } catch(e2) {}
+            activeNodes = null;
+        }
+    }
+
+    function requestRebuild() {
+        if (rebuildTimer) return;
+        rebuildTimer = setTimeout(() => {
+            rebuildTimer = null;
+            rebuildChain();
+        }, 500);
+    }
+
+    function setupLifecycle(ctx, workletNode) {
+        let wasSuspended = false;
+        ctx.onstatechange = () => {
+            if (ctx.state === 'suspended') {
+                wasSuspended = true;
+            } else if (ctx.state === 'running' && wasSuspended) {
+                wasSuspended = false;
+                if (workletNode) {
+                    try {
+                        workletNode.port.postMessage({ type: 'ping' });
+                    } catch (e) {
+                        console.warn('[LoudnessEQ] context 恢复后 port 不可用，触发重建');
+                        requestRebuild();
+                    }
+                }
+            } else if (ctx.state === 'closed') {
+                console.log('[LoudnessEQ] context 已关闭');
+                pendingUpgrades.delete(ctx);
+                if (rebuildTimer) { clearTimeout(rebuildTimer); rebuildTimer = null; }
+            }
+        };
+
+        if (workletNode) {
+            workletNode.onprocessorerror = (e) => {
+                console.error('[LoudnessEQ] worklet processor 错误:', e);
+                requestRebuild();
+            };
+        }
+    }
+
     // ---- 设置同步 ----
 
     window.addEventListener('message', (event) => {
-        if (event.source !== window || !event.data) return;
-        if (event.data.type === 'BILI_EQ_SETTINGS') {
-            settings = { ...settings, ...event.data.settings };
+        if (event.source !== window || !event.data || !EQ) return;
+        if (event.data.type === EQ.TYPES.SETTINGS) {
+            settings = EQ.normalizeSettings(event.data.settings);
         }
     });
 
@@ -155,13 +233,14 @@
 
                 if (state && state.status === 'loaded') {
                     // worklet 已就绪 → 完整链路
-                    const { workletNode, gain, limiter } = createFullChain(ctx, destination);
-                    activeNodes = { ctx, workletNode, gain, limiter };
-                    origConnect.call(this, workletNode);
+                    const full = createFullChain(ctx, destination);
+                    activeNodes = { ctx, ...full, source: this, destination };
+                    origConnect.call(this, full.workletNode);
+                    setupLifecycle(ctx, full.workletNode);
                 } else {
                     // worklet 未就绪 → 旁路链路，等加载完成后自动升级
                     const fb = createFallbackChain(ctx, destination);
-                    activeNodes = { ctx, ...fb };
+                    activeNodes = { ctx, ...fb, source: this, destination };
                     origConnect.call(this, fb.gain);
                     pendingUpgrades.set(ctx, { source: this, fallbackNodes: fb, destination });
                 }

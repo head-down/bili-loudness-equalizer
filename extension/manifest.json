@@ -14,7 +14,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["inject.js", "worklet.js"],
+      "resources": ["messages.js", "inject.js", "worklet.js"],
       "matches": ["*://*.bilibili.com/*"]
     }
   ]
