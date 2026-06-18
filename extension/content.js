@@ -9,16 +9,14 @@
     (document.head || document.documentElement).appendChild(script);
 
     const DEFAULT_SETTINGS = {
-        enabled: true, targetLufs: -18, compressorThreshold: -50, compressorRatio: 12,
-        compressorKnee: 40, compressorAttack: 0.003, compressorRelease: 0.25,
-        preset: 'balanced', gainRange: [-12, 12]
+        enabled: true, targetLufs: -18, preset: 'balanced', gainRange: [-12, 12]
     };
 
     const PRESETS = {
-        balanced: { targetLufs: -18, compressorThreshold: -50, compressorRatio: 12, compressorKnee: 40, compressorAttack: 0.003, compressorRelease: 0.25, gainRange: [-12, 12] },
-        voice:    { targetLufs: -16, compressorThreshold: -40, compressorRatio: 8,  compressorKnee: 30, compressorAttack: 0.001, compressorRelease: 0.15, gainRange: [-6, 6] },
-        music:    { targetLufs: -18, compressorThreshold: -30, compressorRatio: 4,  compressorKnee: 20, compressorAttack: 0.01,  compressorRelease: 0.5,  gainRange: [-6, 3] },
-        gaming:   { targetLufs: -20, compressorThreshold: -60, compressorRatio: 20, compressorKnee: 40, compressorAttack: 0.001, compressorRelease: 0.1,  gainRange: [-24, 6] },
+        balanced: { targetLufs: -18, gainRange: [-12, 12] },
+        voice:    { targetLufs: -16, gainRange: [-6, 6] },
+        music:    { targetLufs: -18, gainRange: [-6, 3] },
+        gaming:   { targetLufs: -20, gainRange: [-24, 6] },
     };
     const PRESET_LABELS = { balanced: '均衡模式', voice: '人声增强', music: '音乐模式', gaming: '游戏模式', custom: '自定义' };
 
